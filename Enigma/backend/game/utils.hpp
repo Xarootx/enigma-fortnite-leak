@@ -2,269 +2,230 @@
 #include "../../includes.hpp"
 #include "aimbot/function.hpp"
 HWND hwnd;
-namespace ut
-{
-	class utils
-	{
-	public:
-		__forceinline char* wchar_to_char(const wchar_t* pwchar)
-		{
-			int currentCharIndex = 0;
-			char currentChar = pwchar[currentCharIndex];
+namespace ut {
+    class utils {
+    public:
+        // Converts wide char string to char string
+        __forceinline char* wchar_to_char(const wchar_t* pwchar) {
+            int len = 0;
+            while (pwchar[len] != '\0') len++;
+            
+            const int charCount = len + 1;
+            char* result = (char*)malloc(sizeof(char) * charCount);
+            
+            for (int i = 0; i < len; i++) {
+                result[i] = (char)pwchar[i];
+            }
+            result[len] = '\0';
+            
+            return result;
+        }
 
-			while (currentChar != '\0')
-			{
-				currentCharIndex++;
-				currentChar = pwchar[currentCharIndex];
-			}
+        // Gets process ID from process name
+        __forceinline DWORD PID(LPCWSTR processName) {
+            HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
+            if (snapshot == INVALID_HANDLE_VALUE)
+                return NULL;
 
-			const int charCount = currentCharIndex + 1;
+            PROCESSENTRY32W entry = { sizeof(PROCESSENTRY32W) };
+            DWORD procID = NULL;
 
-			char* filePathC = (char*)malloc(sizeof(char) * charCount);
+            if (Process32FirstW(snapshot, &entry)) {
+                do {
+                    if (!_wcsicmp(processName, entry.szExeFile)) {
+                        procID = entry.th32ProcessID;
+                        break;
+                    }
+                } while (Process32NextW(snapshot, &entry));
+            }
 
-			for (int i = 0; i < charCount; i++)
-			{
-				char character = pwchar[i];
+            CloseHandle(snapshot);
+            return procID;
+        }
 
-				*filePathC = character;
+        // Clamps coordinates within a range
+        void Range(double* x, double* y, float range) {
+            if (fabs((*x)) <= range && fabs((*y)) <= range)
+                return;
 
-				filePathC += sizeof(char);
+            if ((*y) > (*x)) {
+                if ((*y) > -(*x)) {
+                    (*x) = range * (*x) / (*y);
+                    (*y) = range;
+                }
+                else {
+                    (*y) = -range * (*y) / (*x);
+                    (*x) = -range;
+                }
+            }
+            else {
+                if ((*y) > -(*x)) {
+                    (*y) = range * (*y) / (*x);
+                    (*x) = range;
+                }
+                else {
+                    (*x) = -range * (*x) / (*y);
+                    (*y) = -range;
+                }
+            }
+        }
 
-			}
-			filePathC += '\0';
+        // Calculates rotated point position for radar
+        Vector2 RotatePoint(Vector2 radar_pos, Vector2 radar_size, Vector3 LocalLocation, Vector2 TargetLocation) {
+            double dx = TargetLocation.x - LocalLocation.x;
+            double dy = TargetLocation.y - LocalLocation.y;
 
-			filePathC -= (sizeof(char) * charCount);
+            double x = -dy;
+            double y = -dx;
 
-			return filePathC;
-		}
-		__forceinline DWORD PID(LPCWSTR processName)
-		{
-			HANDLE handle = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
-			DWORD procID = NULL;
+            const double radar_range = 34000.0;
+            Range(&x, &y, radar_range);
 
-			if (handle == INVALID_HANDLE_VALUE)
-				return procID;
+            Vector2 result;
+            result.x = radar_pos.x + (radar_size.x / 2 + (x / radar_range * radar_size.x));
+            result.y = radar_pos.y + (radar_size.y / 2 + (y / radar_range * radar_size.y));
 
-			PROCESSENTRY32W entry = { 0 };
-			entry.dwSize = sizeof(PROCESSENTRY32W);
+            // Clamp coordinates to radar bounds
+            result.x = std::clamp(result.x, radar_pos.x, radar_pos.x + radar_size.x - 5);
+            result.y = std::clamp(result.y, radar_pos.y, radar_pos.y + radar_size.y - 5);
 
-			if (Process32FirstW(handle, &entry)) {
-				if (!_wcsicmp(processName, entry.szExeFile)) {
-					procID = entry.th32ProcessID;
-				}
-				else while (Process32NextW(handle, &entry)) {
-					if (!_wcsicmp(processName, entry.szExeFile)) {
-						procID = entry.th32ProcessID;
-					}
-				}
-			}
+            return result;
+        }
 
-			CloseHandle(handle);
-			return procID;
-		}
-		void Range(double* x, double* y, float range)
-		{
-			if (fabs((*x)) > range || fabs((*y)) > range)
-			{
-				if ((*y) > (*x))
-				{
-					if ((*y) > -(*x))
-					{
-						(*x) = range * (*x) / (*y);
-						(*y) = range;
-					}
-					else
-					{
-						(*y) = -range * (*y) / (*x);
-						(*x) = -range;
-					}
-				}
-				else
-				{
-					if ((*y) > -(*x))
-					{
-						(*y) = range * (*y) / (*x);
-						(*x) = range;
-					}
-					else
-					{
-						(*x) = -range * (*x) / (*y);
-						(*y) = -range;
-					}
-				}
-			}
-		}
-		Vector2 RotatePoint(Vector2 radar_pos, Vector2 radar_size, Vector3 LocalLocation, Vector2 TargetLocation) {
-			auto dx = TargetLocation.x - LocalLocation.x;
-			auto dy = TargetLocation.y - LocalLocation.y;
+        // Converts multibyte string to wide string
+        __forceinline std::wstring MBytesToWString(const char* str) {
+            int len = MultiByteToWideChar(CP_ACP, 0, str, -1, NULL, 0);
+            std::wstring wstr(len - 1, 0);
+            MultiByteToWideChar(CP_ACP, 0, str, -1, &wstr[0], len);
+            return wstr;
+        }
 
-			auto x = dy * -1;
-			x *= -1;
-			auto y = dx * -1;
+        // Converts wide string to UTF8 string  
+        __forceinline std::string WStringToUTF8(const wchar_t* wstr) {
+            int len = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, NULL, 0, NULL, NULL);
+            std::string str(len - 1, 0);
+            WideCharToMultiByte(CP_UTF8, 0, wstr, -1, &str[0], len, NULL, NULL);
+            return str;
+        }
 
-			double calcualted_range = 34 * 1000;
+        // Draws filled rectangle
+        __forceinline void DrawFilledRect(int x, int y, int w, int h, ImU32 color) {
+            ImGui::GetForegroundDrawList()->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), color, 0, 0);
+        }
 
-			Range(&x, &y, calcualted_range);
+        // Draws outlined text
+        void draw_outlined_text(ImVec2 pos, ImColor color, std::string text) {
+            std::stringstream stream(text);
+            std::string line;
+            float y = 0.0f;
 
-			int rad_x = (int)radar_pos.x;
-			int rad_y = (int)radar_pos.y;
+            for (int i = 0; std::getline(stream, line); i++) {
+                ImVec2 textSize = ImGui::CalcTextSize(line.c_str());
+                ImVec2 textPos(pos.x - textSize.x / 2.0f, pos.y + textSize.y * i);
 
-			double r_siz_x = radar_size.x;
-			double r_siz_y = radar_size.y;
+                // Draw outline
+                const ImVec2 offsets[4] = {
+                    ImVec2(1, 1), ImVec2(-1, -1),
+                    ImVec2(1, -1), ImVec2(-1, 1)
+                };
 
-			int x_max = (int)r_siz_x + rad_x - 5;
-			int y_max = (int)r_siz_y + rad_y - 5;
+                for (const auto& offset : offsets) {
+                    ImGui::GetBackgroundDrawList()->AddText(
+                        ImVec2(textPos.x + offset.x, textPos.y + offset.y),
+                        ImGui::GetColorU32(ImVec4(0, 0, 0, 1)),
+                        line.c_str()
+                    );
+                }
 
-			auto return_value = Vector2();
+                // Draw text
+                ImGui::GetBackgroundDrawList()->AddText(textPos, color, line.c_str());
+            }
+        }
 
-			return_value.x = rad_x + ((int)r_siz_x / 2 + int(x / calcualted_range * r_siz_x));
-			return_value.y = rad_y + ((int)r_siz_y / 2 + int(y / calcualted_range * r_siz_y));
+        // Draws formatted string with optional centering and outline
+        __forceinline void DrawString(float fontSize, int x, int y, ImColor color, bool bCenter, bool stroke, const char* pText, ...) {
+            char buf[1024];
+            va_list args;
+            va_start(args, pText);
+            _vsnprintf_s(buf, sizeof(buf), pText, args);
+            va_end(args);
 
-			if (return_value.x > x_max)
-				return_value.x = x_max;
+            std::string text = WStringToUTF8(MBytesToWString(buf).c_str());
+            
+            if (bCenter) {
+                ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
+                x -= textSize.x / 4;
+                y -= textSize.y;
+            }
 
-			if (return_value.x < rad_x)
-				return_value.x = rad_x;
+            if (stroke) {
+                const ImVec2 offsets[4] = {
+                    ImVec2(1, 1), ImVec2(-1, -1),
+                    ImVec2(1, -1), ImVec2(-1, 1)
+                };
 
-			if (return_value.y > y_max)
-				return_value.y = y_max;
+                for (const auto& offset : offsets) {
+                    ImGui::GetBackgroundDrawList()->AddText(
+                        ImGui::GetFont(),
+                        fontSize,
+                        ImVec2(x + offset.x, y + offset.y),
+                        ImGui::ColorConvertFloat4ToU32(ImVec4(0, 0, 0, 1)),
+                        text.c_str()
+                    );
+                }
+            }
 
-			if (return_value.y < rad_y)
-				return_value.y = rad_y;
+            ImGui::GetBackgroundDrawList()->AddText(
+                ImGui::GetFont(),
+                fontSize,
+                ImVec2(x, y),
+                ImColor(color),
+                text.c_str()
+            );
+        }
 
-			return return_value;
-		}
-		
+        // Initializes driver and connects to Fortnite process
+        __forceinline auto init_driver() -> bool {
+            system("cls");
+            if (!ioctl.start_service())
+                return false;
 
+            std::cout << "\n[i] Waiting For Fortnite...\n";
 
-		__forceinline std::wstring MBytesToWString(const char* lpcszString)
-		{
+            // Wait for Fortnite window
+            while (!(hwnd = FindWindowA(0, "Fortnite  "))) {
+                Sleep(100);
+            }
 
+            // Get process ID
+            globals->pid = PID(L"FortniteClient-Win64-Shipping.exe");
+            if (!globals->pid) {
+                system("cls");
+                Sleep(3500);
+                exit(0);
+            }
 
-			int len = strlen(lpcszString);
-			int unicodeLen = ::MultiByteToWideChar(CP_ACP, 0, lpcszString, -1, NULL, 0);
-			wchar_t* pUnicode = new wchar_t[unicodeLen + 1];
-			memset(pUnicode, 0, (unicodeLen + 1) * sizeof(wchar_t));
-			::MultiByteToWideChar(CP_ACP, 0, lpcszString, -1, (LPWSTR)pUnicode, unicodeLen);
-			std::wstring wString = (wchar_t*)pUnicode;
-			delete[] pUnicode;
-			return wString;
-		}
-		__forceinline std::string WStringToUTF8(const wchar_t* lpwcszWString)
-		{
+            // Map and initialize driver
+            if (ioctl.is_mapped(globals->pid)) {
+                ioctl.m_base = ioctl.get_module_base(0);
+                if (!ioctl.m_base || !ioctl.resolve_dtb()) {
+                    return false;
+                }
+            }
 
+            globals->imagebase = ioctl.m_base;
+            if (!globals->imagebase) {
+                system("cls");
+                Sleep(3500);
+                exit(0);
+            }
 
-			char* pElementText;
-			int iTextLen = ::WideCharToMultiByte(CP_UTF8, 0, (LPWSTR)lpwcszWString, -1, NULL, 0, NULL, NULL);
-			pElementText = new char[iTextLen + 1];
-			memset((void*)pElementText, 0, (iTextLen + 1) * sizeof(char));
-			::WideCharToMultiByte(CP_UTF8, 0, (LPWSTR)lpwcszWString, -1, pElementText, iTextLen, NULL, NULL);
-			std::string strReturn(pElementText);
-			delete[] pElementText;
-			return strReturn;
-		}
-		__forceinline void DrawFilledRect(int x, int y, int w, int h, ImU32 color)
-		{
-			ImGui::GetForegroundDrawList()->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), color, 0, 0);
-		}
-		void draw_outlined_text(ImVec2 pos, ImColor color, std::string text)
-		{
-			std::stringstream stream(text);
-			std::string line;
-
-			float y = 0.0f;
-			int i = 0;
-
-			while (std::getline(stream, line))
-			{
-				ImVec2 textSize = ImGui::CalcTextSize(line.c_str());
-
-				ImGui::GetBackgroundDrawList()->AddText(ImVec2((pos.x - textSize.x / 2.0f) + 1, (pos.y + textSize.y * i) + 1), ImGui::GetColorU32(ImVec4(0, 0, 0, 255)), line.c_str());
-				ImGui::GetBackgroundDrawList()->AddText(ImVec2((pos.x - textSize.x / 2.0f) - 1, (pos.y + textSize.y * i) - 1), ImGui::GetColorU32(ImVec4(0, 0, 0, 255)), line.c_str());
-				ImGui::GetBackgroundDrawList()->AddText(ImVec2((pos.x - textSize.x / 2.0f) + 1, (pos.y + textSize.y * i) - 1), ImGui::GetColorU32(ImVec4(0, 0, 0, 255)), line.c_str());
-				ImGui::GetBackgroundDrawList()->AddText(ImVec2((pos.x - textSize.x / 2.0f) - 1, (pos.y + textSize.y * i) + 1), ImGui::GetColorU32(ImVec4(0, 0, 0, 255)), line.c_str());
-
-				ImGui::GetBackgroundDrawList()->AddText(ImVec2(pos.x - textSize.x / 2.0f, pos.y + textSize.y * i), color, line.c_str());
-
-				y = pos.y + textSize.y * (i + 1);
-				i++;
-			}
-		}
-		__forceinline void DrawString(float fontSize, int x, int y, ImColor color, bool bCenter, bool stroke, const char* pText, ...)
-		{
-			va_list va_alist;
-			char buf[1024] = { 0 };
-			va_start(va_alist, pText);
-			_vsnprintf_s(buf, sizeof(buf), pText, va_alist);
-			va_end(va_alist);
-			std::string text = WStringToUTF8(MBytesToWString(buf).c_str());
-			if (bCenter)
-			{
-				ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
-				x = x - textSize.x / 4;
-				y = y - textSize.y;
-			}
-			if (stroke)
-			{
-				ImGui::GetBackgroundDrawList()->AddText(ImGui::GetFont(), fontSize, ImVec2(x + 1, y + 1), ImGui::ColorConvertFloat4ToU32(ImVec4(0, 0, 0, 1)), text.c_str());
-				ImGui::GetBackgroundDrawList()->AddText(ImGui::GetFont(), fontSize, ImVec2(x - 1, y - 1), ImGui::ColorConvertFloat4ToU32(ImVec4(0, 0, 0, 1)), text.c_str());
-				ImGui::GetBackgroundDrawList()->AddText(ImGui::GetFont(), fontSize, ImVec2(x + 1, y - 1), ImGui::ColorConvertFloat4ToU32(ImVec4(0, 0, 0, 1)), text.c_str());
-				ImGui::GetBackgroundDrawList()->AddText(ImGui::GetFont(), fontSize, ImVec2(x - 1, y + 1), ImGui::ColorConvertFloat4ToU32(ImVec4(0, 0, 0, 1)), text.c_str());
-			}
-			ImGui::GetBackgroundDrawList()->AddText(ImGui::GetFont(), fontSize, ImVec2(x, y), ImColor(color), text.c_str());
-		}
-		__forceinline auto init_driver() -> bool
-		{
-			system(_("cls"));
-			if (!ioctl.start_service())
-				return FALSE;
-
-			std::cout << _("\n[i] Waiting For Fortnite...\n");
-
-			while (hwnd == NULL)
-			{
-				hwnd = FindWindowA(0, _("Fortnite  "));
-				Sleep(100);
-			}
-
-			
-			globals->pid = PID(_(L"FortniteClient-Win64-Shipping.exe"));
-			if (!globals->pid)
-			{
-				system(_("cls"));
-				Sleep(3500);
-				exit(0);
-			}
-			if (ioctl.is_mapped(globals->pid)) {
-
-				ioctl.m_base = ioctl.get_module_base(0);
-
-				if (!ioctl.m_base) {
-					return FALSE;
-				}
-
-				if (!ioctl.resolve_dtb()) {
-					return FALSE;
-				}
-			}
-			globals->imagebase = ioctl.m_base;
-			
-			if (!globals->imagebase)
-			{
-				system(_("cls"));
-				Sleep(3500);
-				exit(0);
-			}
-			system(_("cls"));
-			//std::cout << "[i] Process ID -> " << globals->pid << std::endl;;
-			//std::cout << "[i] Base Address -> " << globals->imagebase << std::endl;;
-
-			Sleep(2000);
-
-			system(_("cls"));
-		}
-		
-	};
+            system("cls");
+            Sleep(2000);
+            system("cls");
+            return true;
+        }
+    };
 }
 
 static ut::utils* utility = new ut::utils;
