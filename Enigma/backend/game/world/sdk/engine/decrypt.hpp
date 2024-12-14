@@ -4,151 +4,119 @@
 #include <iostream>
 #include "../../../../../includes.hpp"
 #pragma warning(disable : 4996)
-namespace cach
-{
-	class decrypt
-	{
-	public:
 
-		uintptr_t
-			pname,
-			weapondata,
-			displayname,
-			weaponlength;
-
-		std::string
-			weaponname;
-	};
+// Cache structure for decrypted data
+namespace cache {
+    struct decrypt {
+        uintptr_t pname;
+        uintptr_t weapondata; 
+        uintptr_t displayname;
+        uintptr_t weaponlength;
+        std::string weaponname;
+    };
 }
 
-static cach::decrypt* decryptcached = new cach::decrypt();
+static cache::decrypt* decryptCache = new cache::decrypt();
 
-namespace unrealenginedecryption
-{
-	class decrypt
-	{
-	public:
+// Main decryption namespace for Unreal Engine data
+namespace unrealenginedecryption {
+    class decrypt {
+    public:
+        // Gets platform string from player state
+        __forceinline std::string platform(uintptr_t PlayerState) {
+            uintptr_t platformPtr = ioctl.read<uintptr_t>(PlayerState + 0x438);
+            wchar_t platform[64];
+            ioctl.read_process(platformPtr, platform, sizeof(platform));
+            
+            std::wstring platformWStr(platform);
+            std::string platformStr(platformWStr.begin(), platformWStr.end());
 
-		__forceinline std::string platform(uintptr_t PlayerState)
-		{
-			std::string result;
-			uintptr_t test_platform = ioctl.read<uintptr_t>(PlayerState + 0x438);
-			wchar_t platform[64];
-			ioctl.read_process(test_platform, platform, sizeof(platform));
-			std::wstring platform_wstr(platform);
-			std::string platform_str(platform_wstr.begin(), platform_wstr.end());
-			if (platform_str == "XBL")
-			{
-				result = "Xbox";
-			}
-			else if (platform_str == "PSN")
-			{
-				result = "PlayStation 4";
-			}
-			else if (platform_str == "PS5")
-			{
-				result = "PlayStation 5";
-			}
-			else if (platform_str == "XSX")
-			{
-				result = "Xbox Series X";
+            // Map platform codes to readable names
+            const std::unordered_map<std::string, std::string> platformMap = {
+                {"XBL", "Xbox"},
+                {"PSN", "PlayStation 4"},
+                {"PS5", "PlayStation 5"}, 
+                {"XSX", "Xbox Series X"},
+                {"SWT", "Nintendo Switch"},
+                {"WIN", "PC"}
+            };
 
-			}
-			else if (platform_str == "SWT")
-			{
-				result = "Nintendo Switch";
-			}
-			else if (platform_str == "WIN")
-			{
-				result = "PC";
-			}
-			return result;
-		}
+            auto it = platformMap.find(platformStr);
+            return it != platformMap.end() ? it->second : "";
+        }
 
-		__forceinline std::string username(uintptr_t playerstate)
-		{
-			int pNameLength;
-			uint16_t* pNameBufferPointer;
-			int i;
-			char v25;
-			int v26;
-			int v29;
+        // Decrypts and returns player username
+        __forceinline std::string username(uintptr_t playerstate) {
+            uintptr_t nameStruct = ioctl.read<uintptr_t>(playerstate + 0xAF0);
+            if (!ioctl.is_valid(nameStruct)) {
+                return "";
+            }
 
-			char16_t* pNameBuffer;
+            int nameLength = ioctl.read<int>(nameStruct + 0x10);
+            if (nameLength <= 0) {
+                return "Bot";
+            }
 
-			uintptr_t pNameStructure = ioctl.read < uintptr_t >(playerstate + 0xAF0); //next offset 0xAF8
-			if (ioctl.is_valid(pNameStructure)) {
-				pNameLength = ioctl.read <int>(pNameStructure + 0x10);
-				if (pNameLength <= 0)
-					return "Bot";
+            auto nameBuffer = std::make_unique<char16_t[]>(nameLength);
+            uintptr_t encryptedBuffer = ioctl.read<uintptr_t>(nameStruct + 0x8);
+            
+            if (!ioctl.is_valid(encryptedBuffer)) {
+                return "";
+            }
 
-				pNameBuffer = new char16_t[pNameLength];
-				uintptr_t pNameEncryptedBuffer = ioctl.read <uintptr_t>(pNameStructure + 0x8);
-				if (ioctl.is_valid(pNameEncryptedBuffer)) {
-					ioctl.read_process(pNameEncryptedBuffer, pNameBuffer, pNameLength);
+            ioctl.read_process(encryptedBuffer, nameBuffer.get(), nameLength);
 
-					v25 = pNameLength - 1;
-					v26 = 0;
-					pNameBufferPointer = (uint16_t*)pNameBuffer;
+            // Decrypt name buffer
+            int remainingChars = nameLength - 1;
+            uint16_t* bufferPtr = (uint16_t*)nameBuffer.get();
+            
+            for (int i = remainingChars & 3, pos = 0; pos < remainingChars; i += 3, pos++) {
+                *bufferPtr++ += i & 7;
+            }
 
-					for (i = (v25) & 3;; *pNameBufferPointer++ += i & 7) {
-						v29 = pNameLength - 1;
-						if (!(uint32_t)pNameLength)
-							v29 = 0;
+            if (!ioctl.is_valid((uint64_t)nameBuffer.get())) {
+                return "";
+            }
 
-						if (v26 >= v29)
-							break;
+            std::u16string tempWString(nameBuffer.get());
+            return std::string(tempWString.begin(), tempWString.end());
+        }
 
-						i += 3;
-						++v26;
-					}
-					if (ioctl.is_valid((uint64_t)pNameBuffer))
-					{
-						std::u16string temp_wstring(pNameBuffer);
-						delete[] pNameBuffer;
-						return std::string(temp_wstring.begin(), temp_wstring.end());
-					}
-					else
-					{
-						return "";
-					}
-					
-				}
-			}
-		}
+        // Gets weapon name from current weapon pointer
+        __forceinline std::string weapon(uint64_t CurrentWeapon) {
+            uint64_t weaponData = ioctl.read<uint64_t>(CurrentWeapon + offsets->weapondata);
+            uint64_t itemName = ioctl.read<uint64_t>(weaponData + 0x38);
+            
+            if (!itemName) {
+                return "";
+            }
 
-		__forceinline std::string weapon(uint64_t CurrentWeapon) {
-			std::string PlayersWeaponName = "";
+            uint64_t nameData = ioctl.read<uint64_t>(itemName + 0x28);
+            int nameLength = ioctl.read<int>(itemName + 0x30);
 
-			uint64_t weapondata = ioctl.read<uint64_t>(CurrentWeapon + offsets->weapondata);
-			uint64_t ItemName = ioctl.read<uint64_t>(weapondata + 0x38);
-			if (!ItemName) return "";
+            if (nameLength <= 0 || nameLength >= 50) {
+                return "";
+            }
 
-			uint64_t FData = ioctl.read<uint64_t>(ItemName + 0x28);
-			int FLength = ioctl.read<int>(ItemName + 0x30);
+            auto weaponBuffer = std::make_unique<wchar_t[]>(nameLength);
+            ioctl.read_process(nameData, weaponBuffer.get(), nameLength * sizeof(wchar_t));
+            
+            std::wstring wstrBuf(weaponBuffer.get());
+            return std::string(wstrBuf.begin(), wstrBuf.end());
+        }
 
-			if (FLength > 0 && FLength < 50) {
+        // Checks if weapon is reloading
+        __forceinline auto reloading() -> bool {
+            
+        }
 
-				wchar_t* WeaponBuffer = new wchar_t[FLength];
-				ioctl.read_process(FData, (PVOID)WeaponBuffer, FLength * sizeof(wchar_t));
-				std::wstring wstr_buf(WeaponBuffer);
-				PlayersWeaponName.append(std::string(wstr_buf.begin(), wstr_buf.end()));
-
-				delete[] WeaponBuffer;
-			}
-			return PlayersWeaponName;
-		}
-
-		__forceinline auto reloading() -> bool
-		{
-			
-		}
-
-		__forceinline auto ammocount() -> int
-		{
-	
-		}
-	};
+        // Gets current ammo count
+        __forceinline auto ammocount() -> int {
+    
+        }
+    };
 }
+
 static unrealenginedecryption::decrypt* decrypt = new unrealenginedecryption::decrypt();
-#endif 
+
+#endif
