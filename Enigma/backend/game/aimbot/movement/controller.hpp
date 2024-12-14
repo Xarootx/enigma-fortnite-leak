@@ -2,90 +2,66 @@
 #include <XInput.h>
 #include <Windows.h>
 #pragma comment(lib, "XInput.lib")
-namespace controller
-{
-	class XboxController
-	{
-	private:
-		XINPUT_STATE _controllerState;
-		int _controllerNum;
-	public:
-		XboxController(int playerNumber);
-		XINPUT_STATE GetControllerState();
-		bool CheckConnection();
-	};
 
-	XboxController::XboxController(int playerNumber)
-	{
-		// Set the Controller Number
-		_controllerNum = playerNumber - 1;
-	}
+namespace controller {
 
-	XINPUT_STATE XboxController::GetControllerState()
-	{
-		// Zeroise the state
-		ZeroMemory(&_controllerState, sizeof(XINPUT_STATE));
+// Class to handle Xbox controller input
+class XboxController {
+private:
+    XINPUT_STATE _controllerState;
+    int _controllerNum;
 
-		// Get the state
-		XInputGetState(_controllerNum, &_controllerState);
+public:
+    XboxController(int playerNumber);
+    XINPUT_STATE GetControllerState();
+    bool CheckConnection();
+};
 
-		return _controllerState;
-	}
-
-	bool XboxController::CheckConnection()
-	{
-		// Zeroise the state
-		ZeroMemory(&_controllerState, sizeof(XINPUT_STATE));
-
-		// Get the state
-		DWORD Result = XInputGetState(_controllerNum, &_controllerState);
-
-		if (Result == ERROR_SUCCESS)
-		{
-			return true;
-		}
-		else
-		{
-			return false;
-		}
-	}
-
-
-
-#define XINPUT_GAMEPAD_TRIGGER_THRESHOLD    30
-	XboxController* Player1 = new XboxController(1);
-	void POC()
-	{
-		while (true)
-		{
-			if (Player1->CheckConnection())
-			{
-				if (Player1->GetControllerState().Gamepad.bRightTrigger)
-				{
-					//std::cout << "	[+] Right Trigger Pulled\n";
-				}
-				if (Player1->GetControllerState().Gamepad.bLeftTrigger)
-				{
-					//std::cout << "	[+] Left Trigger Pulled\n";
-
-				}
-			}
-		}
-	}
-	bool IsPressingRightTrigger()
-	{
-		if (Player1->GetControllerState().Gamepad.bRightTrigger)
-		{
-			return true;
-		}
-		return false;
-	}
-	bool getlefttrigger()
-	{
-		if (Player1->GetControllerState().Gamepad.bLeftTrigger)
-		{
-			return true;
-		}
-		return false;
-	}
+XboxController::XboxController(int playerNumber) {
+    _controllerNum = playerNumber - 1;
 }
+
+XINPUT_STATE XboxController::GetControllerState() {
+    ZeroMemory(&_controllerState, sizeof(XINPUT_STATE));
+    XInputGetState(_controllerNum, &_controllerState);
+    return _controllerState;
+}
+
+bool XboxController::CheckConnection() {
+    ZeroMemory(&_controllerState, sizeof(XINPUT_STATE));
+    return XInputGetState(_controllerNum, &_controllerState) == ERROR_SUCCESS;
+}
+
+// Constants
+constexpr BYTE XINPUT_GAMEPAD_TRIGGER_THRESHOLD = 30;
+
+// Global controller instance
+static XboxController* Player1 = new XboxController(1);
+
+// Main controller polling function
+void PollController() {
+    while (true) {
+        if (Player1->CheckConnection()) {
+            const auto& state = Player1->GetControllerState();
+            
+            // Handle trigger inputs
+            if (state.Gamepad.bRightTrigger) {
+                // Right trigger pressed
+            }
+            if (state.Gamepad.bLeftTrigger) {
+                // Left trigger pressed
+            }
+        }
+    }
+}
+
+// Helper functions to check trigger states
+bool IsPressingRightTrigger() {
+    return Player1->GetControllerState().Gamepad.bRightTrigger > 0;
+}
+
+bool IsPressingLeftTrigger() {
+    return Player1->GetControllerState().Gamepad.bLeftTrigger > 0;
+}
+
+} // namespace controller
