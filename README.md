@@ -11,5 +11,3 @@ Join my [discord server](https://discord.gg/YzpCypQyNw) to get vcxproj files and
 
 Screenshot:
 ![Screenshot](https://files.offshore.cat/3YEQBOQ4.png)
-
-
